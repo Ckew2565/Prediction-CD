@@ -3,6 +3,8 @@ import numpy as np
 from tensorflow.keras.models import load_model
 import joblib
 import os
+import matplotlib.pyplot as plt
+
 
 # ========== PAGE CONFIG ==========
 st.set_page_config(page_title="Battery Heat Prediction", layout="wide")
@@ -147,5 +149,18 @@ with right_col:
         for i, hf_val in enumerate(st.session_state['hf_list']):
             with hf_cols[i % 5]:
                 st.markdown(f"<div class='hf-box'>HF {i+1}: {hf_val:.2f}</div>", unsafe_allow_html=True)
+         # ─── เพิ่มกราฟ Heat Flux ───
+        x_positions = np.linspace(0, 65, len(st.session_state['hf_list']))
+        y_hf = st.session_state['hf_list']
+
+        fig, ax = plt.subplots()
+        ax.plot(x_positions, y_hf, marker='o', linestyle='-')
+        ax.set_xlabel('Battery cell length (mm)')
+        ax.set_ylabel('Heat flux (W/m²)')
+        ax.set_title('Heat Flux Distribution Along Battery Cell')
+        ax.grid(True)
+        st.pyplot(fig)
     else:
         st.markdown("<div class='output-box'>No prediction yet</div>", unsafe_allow_html=True)
+
+    
