@@ -1,8 +1,18 @@
-streamlit>=1.20.0
-numpy>=2.3.2
-matplotlib>=3.10.5
-tensorflow>=2.9.0
-scikit-learn>=1.0.0
-joblib>=1.1.0
-h5py>=3.1.0
-Pillow>=9.0.0
+# อัปเดต pip ก่อน แก้รีโซลเวอร์ให้เสถียร
+pip>=25.2
+
+# เว็บแอป
+streamlit>=1.30
+
+# วิทยาศาสตร์ข้อมูล/พล็อต
+numpy
+pandas
+matplotlib
+joblib
+scikit-learn>=1.4
+pillow
+protobuf<5
+
+# Deep Learning (CPU เท่านั้น เพื่อให้ติดตั้งง่ายบน Cloud)
+tensorflow-cpu==2.16.1
+h5py
