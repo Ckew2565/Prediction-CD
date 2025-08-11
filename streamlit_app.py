@@ -26,18 +26,13 @@ div.stButton > button {
 }
 div.stButton > button:hover { background-color: #3366CC; cursor: pointer; }
 
-/* ปุ่มเล็ก (รีเซ็ต) ให้เล็กและอยู่ในแถวเดียวกับหัวข้อ */
-.small-icon-btn > button {
-    width: auto !important;
-    font-size: 18px !important;
-    padding: 4px 10px !important;
-    background-color: #3399CC !important;
-    color: white !important;
-    border-radius: 6px !important;
-    border: none !important;
-}
-.small-icon-btn > button:hover {
-    background-color: #3366CC !important;
+/* ปุ่มรีโหลดเล็กๆ */
+.small-reload-btn {
+    background: none;
+    border: none;
+    font-size: 24px;
+    color: black;
+    cursor: pointer;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -55,11 +50,11 @@ def must_exist(p: Path, kind: str = "file") -> Path:
         st.stop()
     return p
 
+# ตรวจโครง assets
 must_exist(ASSETS_DIR, "dir")
 must_exist(SCALER_DIR, "dir")
 must_exist(MODEL_DIR,  "dir")
 
-# ===== LOAD SCALERS =====
 def load_pkl(path: Path):
     try:
         return joblib.load(must_exist(path, "file"))
@@ -67,6 +62,7 @@ def load_pkl(path: Path):
         st.error(f"โหลดไฟล์ไม่สำเร็จ: {path.name}\nรายละเอียด: {e}")
         st.stop()
 
+# ===== LOAD SCALERS =====
 scaler1_time    = load_pkl(SCALER_DIR / "model1" / "model1_scaler_time.pkl")
 scaler1_temp    = load_pkl(SCALER_DIR / "model1" / "model1_scaler_temp.pkl")
 scaler1_voltage = load_pkl(SCALER_DIR / "model1" / "model1_scaler_voltage.pkl")
@@ -109,26 +105,24 @@ with cols[1]:
 
 st.markdown("<div class='header-text'>Prediction of Heat Distribution in Battery Cells for Electric Vehicles</div>", unsafe_allow_html=True)
 st.markdown("<div class='header-text' style='font-size: 32px;'>ระบบคาดการณ์การกระจายความร้อนในแบตเตอรี่สำหรับยานยนต์ไฟฟ้า</div>", unsafe_allow_html=True)
-
 st.markdown("---")
 
-# ===== TITLE + ปุ่มรีเซ็ตเล็ก =====
-col_title, col_btn = st.columns([8, 1])
-with col_title:
+# ===== TITLE + ปุ่มรีโหลดชิดขวา =====
+c1, space, c2 = st.columns([5, 5, 1])
+with c1:
     st.markdown("<div style='font-size: 25px;'><b>18650 LiFePO₄ Battery</b></div>", unsafe_allow_html=True)
-with col_btn:
-    st.markdown("<div class='small-icon-btn'>", unsafe_allow_html=True)
-    if st.button("🔄", help="ทำนายใหม่"):
+with c2:
+    if st.button("⟲", key="reload_btn", help="ทำนายใหม่", use_container_width=True):
         for k in ["pred", "ep", "mean", "max", "min", "hf", "bt_input", "at_input", "mode_radio"]:
             if k in st.session_state:
                 del st.session_state[k]
         st.rerun()
-    st.markdown("</div>", unsafe_allow_html=True)
 
 # ===== LAYOUT =====
 st.markdown("<div style='padding-left: 40px; padding-right: 40px;'>", unsafe_allow_html=True)
 input_col, output_col, plot_col = st.columns([1, 1, 1])
 
+# ===== STATE =====
 if "pred" not in st.session_state:
     st.session_state["pred"] = False
 
@@ -164,8 +158,7 @@ with input_col:
             scaler1_temp.transform([[at]]),
             [[flag_c, 1 - flag_c]]
         ]).reshape(1, 4)
-        out1 = model1.predict(X1, verbose=0)[0]
-        ep = scaler1_voltage.inverse_transform([[out1[0]]])[0, 0]
+        ep = scaler1_voltage.inverse_transform([[model1.predict(X1, verbose=0)[0][0]]])[0, 0]
 
         # Model 2
         X2 = np.hstack([
@@ -189,8 +182,7 @@ with input_col:
             scaler3_mintemp.transform([[min_temp]]),
             [[flag_c, 1 - flag_c]]
         ]).reshape(1, 8)
-        hf_list = model_hf.predict(X3, verbose=0)
-        hf_list = scaler3_Y.inverse_transform(hf_list)[0].tolist()
+        hf_list = scaler3_Y.inverse_transform(model_hf.predict(X3, verbose=0))[0].tolist()
 
         st.session_state.update({
             "pred": True,
@@ -208,13 +200,12 @@ if st.session_state.get("pred"):
         st.markdown(f"<div class='output-box'>🌡️ Mean Temp: {st.session_state['mean']:.2f} °C</div>", unsafe_allow_html=True)
         st.markdown(f"<div class='output-box'>🔥 Max Temp: {st.session_state['max']:.2f} °C</div>", unsafe_allow_html=True)
         st.markdown(f"<div class='output-box'>❄️ Min Temp: {st.session_state['min']:.2f} °C</div>", unsafe_allow_html=True)
-        st.markdown(f"<div class='output-box'>⚡ Heat Flux: {', '.join([str(i) for i in st.session_state['hf']])}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='output-box'>⚡ Heat Flux: {', '.join(map(str, st.session_state['hf']))}</div>", unsafe_allow_html=True)
 
     with plot_col:
         xs = np.linspace(0, 65, len(st.session_state["hf"]))
-        ys = st.session_state["hf"]
         fig, ax = plt.subplots(figsize=(6, 4))
-        ax.plot(xs, ys, marker='o', linestyle='-', color='#1f77b4',
+        ax.plot(xs, st.session_state["hf"], marker='o', linestyle='-', color='#1f77b4',
                 markerfacecolor='orange', markersize=6)
         ax.set_xlim(0, 65)
         ax.set_xticks([0, 10, 20, 30, 40, 50, 60, 65])
