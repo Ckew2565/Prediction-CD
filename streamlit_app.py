@@ -2,6 +2,7 @@ import streamlit as st
 import numpy as np
 import joblib
 import os
+import re
 import matplotlib.pyplot as plt
 from tensorflow.keras.models import load_model
 from pathlib import Path
@@ -19,20 +20,25 @@ body { background-color: #f4f9ff; }
     background-color: #E6E6FA; padding: 16px; margin: 10px 0; border-radius: 12px;
     box-shadow: 0 4px 10px rgba(0,0,0,0.08); font-size: 20px; font-weight: bold; color: #222;
 }
-/* ปุ่มหลัก (Predict) ให้ใหญ่ */
+/* ปุ่มหลัก (Predict) ให้ใหญ่ — คงเหมือนเดิม */
 div.stButton > button {
     width: 100%; background-color: #3399CC; color: white; font-size: 80px; font-weight: bold;
     padding: 15px; border: none; border-radius: 10px; transition: 0.3s;
 }
 div.stButton > button:hover { background-color: #3366CC; cursor: pointer; }
 
-/* ปุ่มรีโหลดเล็กๆ */
-.small-reload-btn {
-    background: none;
-    border: none;
-    font-size: 24px;
-    color: black;
-    cursor: pointer;
+/* ปุ่มรีโหลด (key=reload_btn): สีดำ โปร่งใส ไม่มีขอบ */
+div[data-testid="stButton"][data-st-key="reload_btn"] > button {
+    background: transparent !important;
+    color: black !important;
+    border: none !important;
+    box-shadow: none !important;
+    font-size: 24px !important;
+    padding: 0 !important;
+}
+div[data-testid="stButton"][data-st-key="reload_btn"] > button:hover {
+    color: #555 !important;
+    background: transparent !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -80,14 +86,14 @@ scaler3_mintemp  = load_pkl(SCALER_DIR / "model_heatflux" / "model3_scaler_minte
 scaler3_temp     = load_pkl(SCALER_DIR / "model_heatflux" / "model3_scaler_temp.pkl")
 scaler3_time     = load_pkl(SCALER_DIR / "model_heatflux" / "model3_scaler_time.pkl")
 scaler3_voltage  = load_pkl(SCALER_DIR / "model_heatflux" / "model3_scaler_voltage.pkl")
-scaler3_Y        = load_pkl(SCALER_DIR / "model_heatflux" / "model3_scaler_Y.pkl")
+scaler3_Y        = load_pkl(SCALER_DIR / "model_heatflux" / "model3_scaler_Y .pkl")
 
 # ===== LOAD MODELS =====
 @st.cache_resource
 def load_models():
-    m2 = load_model(must_exist(MODEL_DIR / "model2_2hidden_50epochs.h5"), compile=False)
-    m1 = load_model(must_exist(MODEL_DIR / "model1_2hidden_50epochs.h5"), compile=False)
-    mh = load_model(must_exist(MODEL_DIR / "model3_3hidden_200epochs.h5"), compile=False)
+    m2 = load_model(must_exist(MODEL_DIR / "model2_3hidden_100epochs.h5"), compile=False)
+    m1 = load_model(must_exist(MODEL_DIR / "model1_4hidden_100epochs.h5"), compile=False)
+    mh = load_model(must_exist(MODEL_DIR / "model3_2hidden_100epochs.h5"), compile=False)
     return m2, m1, mh
 
 model2, model1, model_hf = load_models()
@@ -126,41 +132,80 @@ input_col, output_col, plot_col = st.columns([1, 1, 1])
 if "pred" not in st.session_state:
     st.session_state["pred"] = False
 
-# ===== INPUTS =====
+# ===== Helpers: บังคับช่องกรอกให้เป็นตัวเลขเท่านั้น =====
+def _enforce_numeric(key: str):
+    """
+    อนุญาตเฉพาะ: เครื่องหมายลบตัวแรก (ตำแหน่งแรกเท่านั้น), ตัวเลข 0-9, จุดทศนิยม 1 จุด
+    ระหว่างพิมพ์จะกรองอักขระอื่นทิ้งให้อัตโนมัติ
+    """
+    s = st.session_state.get(key, "")
+    if not isinstance(s, str):
+        return
+    # เอาอักขระที่ไม่ใช่ 0-9 . - ออก
+    cleaned = re.sub(r"[^0-9\.\-]", "", s)
+    # อนุญาต '-' แค่ตัวแรกและต้องอยู่ตำแหน่งแรก
+    if cleaned.count("-") > 0:
+        cleaned = "-" + cleaned.replace("-", "")
+        if not cleaned.startswith("-"):
+            cleaned = cleaned.replace("-", "")
+    # อนุญาตจุดทศนิยมได้แค่ 1 จุด
+    if cleaned.count(".") > 1:
+        first = cleaned.find(".")
+        cleaned = cleaned[:first+1] + cleaned[first+1:].replace(".", "")
+    # อัปเดตกลับถ้าเปลี่ยน
+    if cleaned != s:
+        st.session_state[key] = cleaned
+
+# ===== INPUTS (เริ่มต้นว่าง แต่ยอมรับเฉพาะเลข) =====
 with input_col:
     st.markdown("<div class='input-label'>Select Mode</div>", unsafe_allow_html=True)
     mode = st.radio("", ["Charging", "Discharging"], horizontal=True, key="mode_radio")
 
     st.markdown("<div class='input-label'>Battery Operation Time (s)</div>", unsafe_allow_html=True)
-    battery_time_str = st.text_input("", value=st.session_state.get("bt_input", ""), key="bt_input",
-                                     placeholder="Enter operation time in seconds")
+    bt_key = "bt_input"
+    battery_time_str = st.text_input(
+        "", value=st.session_state.get(bt_key, ""),
+        key=bt_key, placeholder="Enter operation time in seconds",
+        on_change=_enforce_numeric, args=(bt_key,)
+    )
 
     st.markdown("<div class='input-label'>Ambient Temperature (°C)</div>", unsafe_allow_html=True)
-    ambient_temp_str = st.text_input("", value=st.session_state.get("at_input", ""), key="at_input",
-                                     placeholder="Enter ambient temperature in °C")
+    at_key = "at_input"
+    ambient_temp_str = st.text_input(
+        "", value=st.session_state.get(at_key, ""),
+        key=at_key, placeholder="Enter ambient temperature in °C",
+        on_change=_enforce_numeric, args=(at_key,)
+    )
 
     if st.button("Predict", use_container_width=True):
+        # ว่างไม่ได้
         if battery_time_str.strip() == "" or ambient_temp_str.strip() == "":
             st.warning("⚠️ กรุณากรอกข้อมูลให้ครบทั้งสองช่อง")
             st.stop()
+        # แปลงเป็นตัวเลข
         try:
             bt = float(battery_time_str)
             at = float(ambient_temp_str)
         except ValueError:
             st.error("❌ กรุณากรอกตัวเลขเท่านั้น")
             st.stop()
+        # ข้อจำกัดเพิ่มเติม (เวลาไม่ติดลบ)
+        if bt < 0:
+            st.error("❌ เวลา (s) ต้องไม่เป็นค่าติดลบ")
+            st.stop()
 
         flag_c = 1 if st.session_state["mode_radio"] == "Charging" else 0
 
-        # Model 1
+        # ===== Model 1 =====
         X1 = np.hstack([
             scaler1_time.transform([[bt]]),
             scaler1_temp.transform([[at]]),
             [[flag_c, 1 - flag_c]]
         ]).reshape(1, 4)
-        ep = scaler1_voltage.inverse_transform([[model1.predict(X1, verbose=0)[0][0]]])[0, 0]
+        out1 = model1.predict(X1, verbose=0)[0]
+        ep = scaler1_voltage.inverse_transform([[out1[0]]])[0, 0]
 
-        # Model 2
+        # ===== Model 2 =====
         X2 = np.hstack([
             scaler2_time.transform([[bt]]),
             scaler2_voltage.transform([[ep]]),
@@ -172,7 +217,7 @@ with input_col:
         max_temp  = scaler2_max.inverse_transform([[out2[1]]])[0, 0]
         min_temp  = scaler2_min.inverse_transform([[out2[2]]])[0, 0]
 
-        # Model 3
+        # ===== Model 3 =====
         X3 = np.hstack([
             scaler3_time.transform([[bt]]),
             scaler3_temp.transform([[at]]),
@@ -215,5 +260,3 @@ if st.session_state.get("pred"):
         ax.grid(True, linestyle='--', alpha=0.6)
         ax.set_facecolor('#f7f7f7')
         st.pyplot(fig)
-
-st.markdown("</div>", unsafe_allow_html=True)
